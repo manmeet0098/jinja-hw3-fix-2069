@@ -203,6 +203,152 @@ class TestMeta:
         x = meta.find_undeclared_variables(ast)
         assert x == {"control"}
 
+    @pytest.mark.parametrize(
+        ("source", "expect"),
+        [
+            pytest.param(
+                "{% if a %}{% set x = 1 %}{% elif b %}{% set x = 2 %}"
+                "{% elif c %}{% set x = 3 %}{% else %}{% set x = 4 %}{% endif %}"
+                "{{ x }}",
+                {"a", "b", "c"},
+                id="multiple-elif",
+            ),
+            pytest.param(
+                "{% if a %}{% if b %}{% set x = 1 %}{% else %}{% set x = 2 %}"
+                "{% endif %}{% else %}{% set x = 3 %}{% endif %}{{ x }}",
+                {"a", "b"},
+                id="nested-if",
+            ),
+            pytest.param(
+                "{% if a %}{% set x = 1 %}{{ x }}{% else %}{% set x = 2 %}{% endif %}"
+                "{{ x }}",
+                {"a"},
+                id="load-after-store",
+            ),
+            pytest.param(
+                "{% if a %}{% set x %}1{% endset %}{% else %}{% set x %}2{% endset %}"
+                "{% endif %}{{ x }}",
+                {"a"},
+                id="set-block",
+            ),
+            pytest.param(
+                "{% if a %}{% set x, y = 1, 2 %}{% else %}{% set x, y = 3, 4 %}"
+                "{% endif %}{{ x }}{{ y }}",
+                {"a"},
+                id="unpacking",
+            ),
+            pytest.param(
+                "{% if a %}{% import 'a' as x %}{% else %}{% import 'b' as x %}"
+                "{% endif %}{{ x }}",
+                {"a"},
+                id="import",
+            ),
+            pytest.param(
+                "{% if a %}{% macro x() %}1{% endmacro %}"
+                "{% else %}{% macro x() %}2{% endmacro %}{% endif %}{{ x() }}",
+                {"a"},
+                id="macro",
+            ),
+            pytest.param(
+                "{% for i in seq %}{% if a %}{% set x = 1 %}{% else %}{% set x = 2 %}"
+                "{% endif %}{{ x }}{% endfor %}",
+                {"seq", "a"},
+                id="in-for",
+            ),
+            pytest.param(
+                "{% macro m() %}{% if a %}{% set x = 1 %}{% else %}{% set x = 2 %}"
+                "{% endif %}{{ x }}{% endmacro %}",
+                {"a"},
+                id="in-macro",
+            ),
+        ],
+    )
+    def test_find_undeclared_variables_if_all_branches(self, env, source, expect):
+        assert meta.find_undeclared_variables(env.parse(source)) == expect
+
+    @pytest.mark.parametrize(
+        ("source", "expect"),
+        [
+            pytest.param(
+                "{% if a %}{% set x = 1 %}{% endif %}{{ x }}",
+                {"a", "x"},
+                id="no-else",
+            ),
+            pytest.param(
+                "{% if a %}{% set x = 1 %}{% elif b %}{% set x = 2 %}{% endif %}"
+                "{{ x }}",
+                {"a", "b", "x"},
+                id="elif-no-else",
+            ),
+            pytest.param(
+                "{% if a %}{% set x = 1 %}{% elif b %}{% else %}{% set x = 3 %}"
+                "{% endif %}{{ x }}",
+                {"a", "b", "x"},
+                id="empty-elif",
+            ),
+            pytest.param(
+                "{% if a %}{% set x = 1 %}{% else %}{% set y = 2 %}{% endif %}"
+                "{{ x }}{{ y }}",
+                {"a", "x", "y"},
+                id="different-names",
+            ),
+            pytest.param(
+                "{% if a %}{% if b %}{% set x = 1 %}{% endif %}"
+                "{% else %}{% set x = 2 %}{% endif %}{{ x }}",
+                {"a", "b", "x"},
+                id="nested-if-partial",
+            ),
+            pytest.param(
+                "{% if a %}{% with %}{% set x = 1 %}{% endwith %}"
+                "{% else %}{% set x = 2 %}{% endif %}{{ x }}",
+                {"a", "x"},
+                id="scoped-with",
+            ),
+        ],
+    )
+    def test_find_undeclared_variables_if_some_branches(self, env, source, expect):
+        assert meta.find_undeclared_variables(env.parse(source)) == expect
+
+    @pytest.mark.parametrize(
+        ("source", "expect"),
+        [
+            pytest.param(
+                "{{ x }}{% if a %}{% set x = 1 %}{% else %}{% set x = 2 %}{% endif %}",
+                {"a", "x"},
+                id="before-if",
+            ),
+            pytest.param(
+                "{% if x %}{% set x = 1 %}{% else %}{% set x = 2 %}{% endif %}",
+                {"x"},
+                id="if-test",
+            ),
+            pytest.param(
+                "{% if a %}{% set x = 1 %}{% elif x %}{% set x = 2 %}"
+                "{% else %}{% set x = 3 %}{% endif %}",
+                {"a", "x"},
+                id="elif-test",
+            ),
+            pytest.param(
+                "{% if a %}{{ x }}{% set x = 1 %}{% elif b %}{% set x = 2 %}"
+                "{% else %}{% set x = 3 %}{% endif %}",
+                {"a", "b", "x"},
+                id="first-branch",
+            ),
+            pytest.param(
+                "{% if a %}{% set x = 1 %}{% else %}{{ x }}{% set x = 2 %}{% endif %}",
+                {"a", "x"},
+                id="last-branch",
+            ),
+            pytest.param(
+                "{% if a %}{% set x = x + 1 %}{% else %}{% set x = 2 %}{% endif %}",
+                {"a", "x"},
+                id="self-reference",
+            ),
+        ],
+    )
+    def test_find_undeclared_variables_if_load_before_store(self, env, source, expect):
+        assert meta.find_undeclared_variables(env.parse(source)) == expect
+
     def test_find_refererenced_templates(self, env):
         ast = env.parse('{% extends "layout.html" %}{% include helper %}')
         i = meta.find_referenced_templates(ast)

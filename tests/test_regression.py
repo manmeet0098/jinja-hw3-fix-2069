@@ -760,6 +760,56 @@ def test_load_parameter_when_set_in_all_if_branches(env):
     assert tmpl.render(a={"b": 0}) == "01"
 
 
+def test_load_parameter_when_loaded_in_elif_test(env):
+    tmpl = env.from_string(
+        "{% if a %}{% set b = 1 %}"
+        "{% elif b %}{% set b = 2 %}"
+        "{% else %}{% set b = 3 %}{% endif %}"
+        "{{ b }}"
+    )
+    assert tmpl.render(a=False, b=True) == "2"
+    assert tmpl.render(a=False, b=False) == "3"
+
+
+@pytest.mark.parametrize(
+    ("a", "b", "expect"), [(True, False, "1"), (False, True, "2"), (False, False, "3")]
+)
+def test_set_in_all_if_branches(env, a, b, expect):
+    tmpl = env.from_string(
+        "{% if a %}{% set x = 1 %}"
+        "{% elif b %}{% set x = 2 %}"
+        "{% else %}{% set x = 3 %}{% endif %}"
+        "{{ x }}"
+    )
+    assert tmpl.render(a=a, b=b, x="context") == expect
+
+
+@pytest.mark.parametrize(
+    "read",
+    [
+        pytest.param("{{ x }}", id="direct"),
+        pytest.param("{% macro m() %}{{ x }}{% endmacro %}{{ m() }}", id="macro"),
+        pytest.param(
+            "{% macro m() %}{{ caller() }}{% endmacro %}"
+            "{% call m() %}{{ x }}{% endcall %}",
+            id="call",
+        ),
+        pytest.param("{% for i in [1] %}{{ x }}{% endfor %}", id="for"),
+        pytest.param("{% with %}{{ x }}{% endwith %}", id="with"),
+        pytest.param("{% filter upper %}{{ x }}{% endfilter %}", id="filter"),
+    ],
+)
+def test_set_in_all_if_branches_same_as_plain_set(env, read):
+    # Reading the name before it is set gives the same result as with a
+    # plain set, since the name is assigned on every path.
+    plain = env.from_string(f"[{read}]{{% set x = 1 %}}{{{{ x }}}}")
+    branched = env.from_string(
+        f"[{read}]{{% if a %}}{{% set x = 1 %}}{{% else %}}{{% set x = 1 %}}"
+        "{% endif %}{{ x }}"
+    )
+    assert branched.render(a=True, x="c") == plain.render(x="c")
+
+
 @pytest.mark.parametrize("unicode_char", ["\N{FORM FEED}", "\x85"])
 def test_unicode_whitespace(env, unicode_char):
     content = "Lorem ipsum\n" + unicode_char + "\nMore text"

@@ -288,3 +288,89 @@ def test_if_branching_multi_scope():
         "l_1_item": ("param", None),
         "l_1_expression": ("resolve", "expression"),
     }
+
+
+def test_if_branching_stores_all_branches():
+    tmpl = nodes.Template(
+        [
+            nodes.If(
+                nodes.Name("expression", "load"),
+                [nodes.Assign(nodes.Name("variable", "store"), nodes.Const(42))],
+                [
+                    nodes.If(
+                        nodes.Name("expression2", "load"),
+                        [
+                            nodes.Assign(
+                                nodes.Name("variable", "store"), nodes.Const(23)
+                            )
+                        ],
+                        [],
+                        [],
+                    )
+                ],
+                [nodes.Assign(nodes.Name("variable", "store"), nodes.Const(1))],
+            )
+        ]
+    )
+
+    sym = symbols_for_node(tmpl)
+    assert sym.stores == {"variable"}
+    assert sym.loads == {
+        "l_0_variable": ("undefined", None),
+        "l_0_expression": ("resolve", "expression"),
+        "l_0_expression2": ("resolve", "expression2"),
+    }
+
+
+def test_if_branching_load_before_store():
+    tmpl = nodes.Template(
+        [
+            nodes.If(
+                nodes.Name("expression", "load"),
+                [nodes.Assign(nodes.Name("variable", "store"), nodes.Const(42))],
+                [],
+                [
+                    nodes.Output([nodes.Name("variable", "load")]),
+                    nodes.Assign(nodes.Name("variable", "store"), nodes.Const(1)),
+                ],
+            )
+        ]
+    )
+
+    sym = symbols_for_node(tmpl)
+    assert sym.stores == {"variable"}
+    assert sym.loads == {
+        "l_0_variable": ("resolve", "variable"),
+        "l_0_expression": ("resolve", "expression"),
+    }
+
+
+def test_if_branching_multi_scope_all_branches():
+    for_loop = nodes.For(
+        nodes.Name("item", "store"),
+        nodes.Name("seq", "load"),
+        [
+            nodes.If(
+                nodes.Name("expression", "load"),
+                [nodes.Assign(nodes.Name("x", "store"), nodes.Const(42))],
+                [],
+                [nodes.Assign(nodes.Name("x", "store"), nodes.Const(1))],
+            ),
+        ],
+        [],
+        None,
+        False,
+    )
+
+    tmpl = nodes.Template(
+        [nodes.Assign(nodes.Name("x", "store"), nodes.Const(23)), for_loop]
+    )
+
+    tmpl_sym = symbols_for_node(tmpl)
+    for_sym = symbols_for_node(for_loop, tmpl_sym)
+    assert for_sym.stores == {"item", "x"}
+    assert for_sym.loads == {
+        "l_1_x": ("alias", "l_0_x"),
+        "l_1_item": ("param", None),
+        "l_1_expression": ("resolve", "expression"),
+    }
