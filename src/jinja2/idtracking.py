@@ -121,21 +121,28 @@ class Symbols:
             self._define_ref(name, load=(VAR_LOAD_RESOLVE, name))
 
     def branch_update(self, branch_symbols: t.Sequence["Symbols"]) -> None:
-        stores: t.Set[str] = set()
+        stores: t.Dict[str, int] = {}
 
         for branch in branch_symbols:
-            stores.update(branch.stores)
-
-        stores.difference_update(self.stores)
+            for name in branch.stores.difference(self.stores):
+                stores[name] = stores.get(name, 0) + 1
 
         for sym in branch_symbols:
             self.refs.update(sym.refs)
             self.loads.update(sym.loads)
             self.stores.update(sym.stores)
 
-        for name in stores:
+        for name, branch_count in stores.items():
             target = self.find_ref(name)
             assert target is not None, "should not happen"
+
+            # If every branch stores the name, the value from before the
+            # branches is only needed if some branch loads it before storing.
+            if branch_count == len(branch_symbols) and not any(
+                sym.loads.get(target, (None, None))[0] == VAR_LOAD_RESOLVE
+                for sym in branch_symbols
+            ):
+                continue
 
             if self.parent is not None:
                 outer_target = self.parent.find_ref(name)
@@ -262,10 +269,16 @@ class FrameSymbolVisitor(NodeVisitor):
             self.symbols = original_symbols
             return rv
 
-        body_symbols = inner_visit(node.body)
-        elif_symbols = inner_visit(node.elif_)
-        else_symbols = inner_visit(node.else_ or ())
-        self.symbols.branch_update([body_symbols, elif_symbols, else_symbols])
+        # Each elif is its own branch, like in the generated code. The else
+        # branch is always added, even if empty, since it is the path taken
+        # when no test matches.
+        branch_symbols = [inner_visit(node.body)]
+
+        for elif_ in node.elif_:
+            branch_symbols.append(inner_visit([elif_.test, *elif_.body]))
+
+        branch_symbols.append(inner_visit(node.else_ or ()))
+        self.symbols.branch_update(branch_symbols)
 
     def visit_Macro(self, node: nodes.Macro, **kwargs: t.Any) -> None:
         self.symbols.store(node.name)

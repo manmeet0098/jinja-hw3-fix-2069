@@ -1,5 +1,18 @@
 .. currentmodule:: jinja2
 
+Version 3.1.7
+-------------
+
+Unreleased
+
+-   A variable that is set in every branch of an ``{% if %}`` block, including
+    any ``{% elif %}`` branches and an ``{% else %}`` branch, is treated the
+    same as a variable set outside the block. It is not reported by
+    ``meta.find_undeclared_variables`` and is not looked up from the context,
+    unless a branch uses it before setting it. Each ``{% elif %}`` is treated
+    as a separate branch. :issue:`2069`
+
+
 Version 3.1.6
 -------------
 
