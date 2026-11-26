@@ -179,6 +179,30 @@ class TestMeta:
         x = meta.find_undeclared_variables(ast)
         assert x == {"foo"}
 
+    @pytest.mark.parametrize(
+        "source",
+        [
+            pytest.param(
+                "{% if control == 'something' %}{% set output = 1 %}"
+                "{% elif control == 'something else' %}{% set output = 2 %}"
+                "{% else %}{% set output = 3 %}{% endif %}"
+                "{{ output }}",
+                id="if-elif-else",
+            ),
+            pytest.param(
+                "{% if control == 'something' %}{% set output = 1 %}"
+                "{% else %}{% set output = 2 %}{% endif %}"
+                "{{ output }}",
+                id="if-else",
+            ),
+        ],
+    )
+    def test_find_undeclared_variables_set_in_all_if_branches(self, env, source):
+        # https://github.com/pallets/jinja/issues/2069
+        ast = env.parse(source)
+        x = meta.find_undeclared_variables(ast)
+        assert x == {"control"}
+
     def test_find_refererenced_templates(self, env):
         ast = env.parse('{% extends "layout.html" %}{% include helper %}')
         i = meta.find_referenced_templates(ast)
